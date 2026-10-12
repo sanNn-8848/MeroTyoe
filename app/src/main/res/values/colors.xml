@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand accent: warm coral/saffron -->
+    <color name="accent">#FFFF6B4A</color>
+    <color name="accent_soft">#FFFF8A72</color>
+    <color name="accent_deep">#FFE8522E</color>
+
+    <!-- Supporting accents -->
+    <color name="success">#FF5DE2B1</color>
+    <color name="blue">#FF5CA9FF</color>
+
+    <!-- FrostGlass Dark -->
+    <color name="keyboard_bg_dark">#FF07090D</color>
+    <color name="keyboard_bg_dark_top">#FF0D1118</color>
+    <color name="letter_key_dark">#1CFFFFFF</color>
+    <color name="letter_key_dark_pressed">#38FFFFFF</color>
+    <color name="action_key_dark">#14FFFFFF</color>
+    <color name="action_key_dark_pressed">#2EFFFFFF</color>
+    <color name="action_key_dark_warm">#26FF6B4A</color>
+    <color name="action_key_dark_pressed_warm">#40FF6B4A</color>
+    <color name="key_border_dark">#1AFFFFFF</color>
+    <color name="border_glow_pressed">#66FF6B4A</color>
+    <color name="letter_text_dark">#FFFFFFFF</color>
+    <color name="secondary_text_dark">#FFA9AFBC</color>
+    <color name="icon_dark">#FFA9AFBC</color>
+    <color name="space_label_dark">#FFFF8A72</color>
+
+    <!-- FrostGlass Light -->
+    <color name="keyboard_bg_light">#FFE9EDF3</color>
+    <color name="keyboard_bg_light_top">#FFF1F4F9</color>
+    <color name="letter_key_light">#99FFFFFF</color>
+    <color name="letter_key_light_pressed">#CCFFFFFF</color>
+    <color name="action_key_light">#66FFFFFF</color>
+    <color name="action_key_light_pressed">#99FFFFFF</color>
+    <color name="action_key_light_warm">#33FF6B4A</color>
+    <color name="action_key_light_pressed_warm">#66FF6B4A</color>
+    <color name="key_border_light">#404A5A66</color>
+    <color name="letter_text_light">#FF161922</color>
+    <color name="secondary_text_light">#FF5A6270</color>
+    <color name="icon_light">#FF161922</color>
+    <color name="space_label_light">#FFE85C42</color>
+
+    <!-- Glass overlay tints -->
+    <color name="mountains_dark">#0AFFFFFF</color>
+    <color name="mountains_light">#09161922</color>
+    <color name="glow_dark">#33FF6B4A</color>
+    <color name="glow_dark_edge">#00FF6B4A</color>
+    <color name="glow_light">#33FF9E6E</color>
+    <color name="glow_light_edge">#00FF9E6E</color>
+</resources>

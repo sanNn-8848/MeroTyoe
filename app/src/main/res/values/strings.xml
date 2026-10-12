@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MeroType</string>
+    <string name="ime_name">MeroType Keyboard</string>
+    <string name="settings_title">Settings</string>
+    <string name="subtype_english">English</string>
+    <string name="subtype_nepali">Roman Nepali</string>
+
+    <!-- Settings screen -->
+    <string name="settings_app_name">MeroType</string>
+    <string name="settings_app_subtitle">Roman Nepali Keyboard · 100% offline &amp; private</string>
+    <string name="setup_keyboard">Set up keyboard</string>
+    <string name="enable_keyboard_dialog_title">Enable MeroType</string>
+    <string name="enable_keyboard_dialog_message">To use MeroType you need to enable it on your device. It stays on your phone — nothing is uploaded.</string>
+    <string name="open_settings">Open settings</string>
+    <string name="later">Later</string>
+
+    <string name="section_keyboard">Keyboard</string>
+    <string name="dark_theme">Dark theme</string>
+    <string name="key_vibration">Key vibration</string>
+    <string name="key_audio">Key sounds</string>
+    <string name="word_suggestions">Word suggestions</string>
+    <string name="keyboard_size">Keyboard size</string>
+    <string name="keyboard_size_hint">Drag to resize the keys</string>
+    <string name="keyboard_size_small">Small</string>
+    <string name="keyboard_size_normal">Normal</string>
+    <string name="keyboard_size_large">Large</string>
+    <string name="section_dictionary">Personal dictionary</string>
+    <string name="dictionary_hint">Your words always rank first and are never wiped by \u201cclear learned\u201d.</string>
+    <string name="word_input_hint">Add your own word…</string>
+    <string name="add_word">Add</string>
+    <string name="saved_words">Saved words</string>
+    <string name="learned_words">Learned from your typing</string>
+    <string name="clear_learned">Clear learned</string>
+    <string name="no_saved_words">No saved words yet.</string>
+    <string name="no_learned_words">No learned words yet.</string>
+    <string name="suppressed_words">Suppressed words</string>
+    <string name="no_suppressed_words">No suppressed words yet.</string>
+    <string name="empty_word">Enter a word first.</string>
+    <string name="word_invalid">Letters and spaces only.</string>
+    <string name="word_added">Added \u201c%1$s\u201d</string>
+
+    <string name="section_clipboard">Clipboard</string>
+    <string name="clipboard_hint">Copied text is saved here (last few items). Tip: Android only lets this keyboard see copies made in other apps when MeroType is set as your default keyboard — set it in Settings → System → Languages &amp; input → Virtual keyboard.</string>
+    <string name="clear_clipboard">Clear clipboard</string>
+    <string name="no_clipboard">Nothing copied yet.</string>
+
+    <string name="clear_learned_confirmed">Cleared learned words</string>
+    <string name="clear_clipboard_confirmed">Cleared clipboard</string>
+    <string name="word_removed_confirmed">Removed \u201c%1$s\u201d</string>
+    <string name="word_favorited_confirmed">Added %1$s to favorites</string>
+    <string name="suggestion_remove_zone">REMOVE</string>
+    <string name="suggestion_favorite_zone">FAVORITE</string>
+    <string name="suggestion_drag_hint">Long-press a suggestion, then drag it to a zone</string>
+    <string name="word_restored_confirmed">Restored \u201c%1$s\u201d</string>
+    <string name="clip_removed_confirmed">Removed clip</string>
+    <string name="undo">Undo</string>
+
+    <!-- Suggestion / tool bar -->
+    <string name="undo_content_description">Undo delete</string>
+    <string name="delete_suggestion">Remove</string>
+    <string name="space_label">Roman Nepali</string>
+
+    <!-- Advanced settings & Controls -->
+    <string name="devanagari_suggestions">Devanagari script suggestions</string>
+    <string name="devanagari_hint">Suggest authentic Nepali script (e.g. kasto → कस्तो)</string>
+    <string name="vibration_intensity">Vibration intensity</string>
+    <string name="test_vibration">Test Haptics</string>
+    <string name="swipe_delete_title">Swipe ⌫ to erase words</string>
+    <string name="swipe_delete_hint">Drag backspace forward to the left to erase whole words (Ctrl+erase)</string>
+    <string name="auto_capitalization_title">Auto-capitalization</string>
+    <string name="auto_capitalization_hint">Capitalize first letter at the start of sentences</string>
+    <string name="double_space_period_title">Double space for period</string>
+    <string name="double_space_period_hint">Double-tap space to insert \u201c. \u201d</string>
+    <string name="number_row_title">Dedicated number row</string>
+    <string name="number_row_hint">Show top number row for quick digits</string>
+    <string name="try_keyboard_title">Typing Playground</string>
+    <string name="try_keyboard_hint">Tap here to test typing Roman Nepali…</string>
+    <string name="try_keyboard_tip">💡 Tip: Press ⌫ and drag left to erase the whole word!</string>
+    <string name="step_enable">Step 1: Enable Keyboard</string>
+    <string name="step_switch">Step 2: Select MeroType</string>
+    <string name="status_active">✓ Active Default Keyboard</string>
+    <string name="status_enabled">Enabled in System</string>
+    <string name="status_inactive">Action Needed</string>
+    <string name="common_words_tab">Room Dictionary</string>
+    <string name="saved_words_tab">Saved Words</string>
+    <string name="learned_words_tab">Learned Words</string>
+    <string name="privacy_offline_badge">🔒 100% Offline &amp; Private · Stays on your phone</string>
+</resources>

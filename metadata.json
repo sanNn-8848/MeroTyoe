@@ -1,0 +1,6 @@
+{
+  "name": "MeroType",
+  "description": "Fast Roman Nepali Keyboard with optimized character layout rendering, sub-millisecond input response, and intelligent predictive text.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

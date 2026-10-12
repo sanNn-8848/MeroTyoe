@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="Keyboard Appearance">
+        <SwitchPreferenceCompat
+            app:key="dark_theme"
+            app:title="@string/dark_theme"
+            app:summary="FrostGlass Matte Dark mode"
+            app:defaultValue="true" />
+
+        <SeekBarPreference
+            app:key="keyboard_size"
+            app:title="@string/keyboard_size"
+            app:summary="@string/keyboard_size_hint"
+            app:min="0"
+            android:max="100"
+            app:defaultValue="50"
+            app:showSeekBarValue="true" />
+
+        <SwitchPreferenceCompat
+            app:key="show_number_row"
+            app:title="@string/number_row_title"
+            app:summary="@string/number_row_hint"
+            app:defaultValue="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Typing &amp; Auto-Correction">
+        <SwitchPreferenceCompat
+            app:key="devanagari_suggestions"
+            app:title="@string/devanagari_suggestions"
+            app:summary="@string/devanagari_hint"
+            app:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            app:key="word_suggestions"
+            app:title="@string/word_suggestions"
+            app:summary="Predictive word candidates and auto-correction"
+            app:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            app:key="swipe_delete_word"
+            app:title="@string/swipe_delete_title"
+            app:summary="@string/swipe_delete_hint"
+            app:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            app:key="auto_capitalization"
+            app:title="@string/auto_capitalization_title"
+            app:summary="@string/auto_capitalization_hint"
+            app:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            app:key="double_space_period"
+            app:title="@string/double_space_period_title"
+            app:summary="@string/double_space_period_hint"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Haptics &amp; Audio Feedback">
+        <SwitchPreferenceCompat
+            app:key="key_vibration"
+            app:title="@string/key_vibration"
+            app:summary="Tactile haptic response on each key tap"
+            app:defaultValue="true" />
+
+        <SeekBarPreference
+            app:key="vibration_intensity"
+            app:title="@string/vibration_intensity"
+            app:summary="Adjust the tactile vibration strength"
+            app:min="0"
+            android:max="100"
+            app:defaultValue="60"
+            app:showSeekBarValue="true"
+            app:dependency="key_vibration" />
+
+        <SwitchPreferenceCompat
+            app:key="key_sound"
+            app:title="@string/key_audio"
+            app:summary="Audio click feedback"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
+</PreferenceScreen>

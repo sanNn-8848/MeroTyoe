@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/merotype_keyboard_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#1E1E1E"
+    android:padding="4dp">
+
+    <!-- 1. FIXED TOP ACTION TOOLBAR -->
+    <LinearLayout
+        android:id="@+id/toolbar_container"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="6dp"
+        android:background="#252525"
+        android:layout_marginBottom="4dp">
+
+        <!-- Left Action: Menu / Quick Settings -->
+        <ImageView
+            android:id="@+id/btn_menu"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
+            android:src="@drawable/ic_menu"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Settings Menu"
+            android:tint="#A0A0A0" />
+
+        <!-- Center Action: Dynamic Suggestion Pills Container -->
+        <LinearLayout
+            android:id="@+id/container_suggestions"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingHorizontal="4dp" />
+
+        <!-- Right Actions Group -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/btn_clipboard"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_clipboard"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Clipboard"
+                android:tint="#A0A0A0" />
+
+            <ImageView
+                android:id="@+id/btn_emoji"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_emoji"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Emoji Picker"
+                android:tint="#A0A0A0" />
+
+            <!-- Voice Dictation Trigger -->
+            <ImageView
+                android:id="@+id/btn_mic"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_mic"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Voice Input"
+                android:tint="#4CD964" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 2. KEYBOARD ROWS CONTAINER -->
+    <LinearLayout
+        android:id="@+id/keyboard_rows_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Row 1: Top Letter Row (Q W E R T Y U I O P) -->
+        <LinearLayout
+            android:id="@+id/row_1"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal"
+            android:weightSum="10">
+
+            <Button android:id="@+id/key_q" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="q" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_w" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="w" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_e" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="e" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_r" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="r" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_t" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="t" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_y" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="y" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_u" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="u" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_i" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="i" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_o" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="o" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_p" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="p" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+        </LinearLayout>
+
+        <!-- Row 2: Home Row (A S D F G H J K L) -->
+        <LinearLayout
+            android:id="@+id/row_2"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal"
+            android:weightSum="9">
+
+            <Button android:id="@+id/key_a" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="a" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_s" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="s" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_d" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="d" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_f" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="f" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_g" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="g" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_h" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="h" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_j" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="j" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_k" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="k" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_l" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="l" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+        </LinearLayout>
+
+        <!-- Row 3: Shift, Bottom Letters (Z-M), Custom Backspace -->
+        <LinearLayout
+            android:id="@+id/row_3"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/key_shift"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1.5"
+                android:text="⇧"
+                android:textColor="#FFFFFF"
+                android:background="#2B2B2B"
+                android:layout_margin="2dp" />
+
+            <Button android:id="@+id/key_z" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="z" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_x" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="x" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_c" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="c" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_v" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="v" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_b" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="b" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_n" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="n" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+            <Button android:id="@+id/key_m" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="m" android:textColor="#FFFFFF" android:background="#2B2B2B" android:layout_margin="2dp" />
+
+            <!-- CUSTOM BACKSPACE VIEW -->
+            <com.merotype.keyboard.views.BackspaceKeyView
+                android:id="@+id/key_backspace"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1.5"
+                android:background="#2B2B2B"
+                android:src="@drawable/ic_backspace"
+                android:scaleType="centerInside"
+                android:contentDescription="Backspace"
+                android:layout_margin="2dp" />
+        </LinearLayout>
+
+        <!-- Row 4: Symbols, Language Toggle, Custom Spacebar, Enter -->
+        <LinearLayout
+            android:id="@+id/row_4"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/key_symbol"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1.5"
+                android:text="\?123"
+                android:textColor="#A0A0A0"
+                android:background="#2B2B2B"
+                android:layout_margin="2dp" />
+
+            <!-- CUSTOM SPACEBAR VIEW -->
+            <com.merotype.keyboard.views.SpacebarKeyView
+                android:id="@+id/key_space"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="6.0"
+                android:text="English / Roman Nepali"
+                android:background="#2B2B2B"
+                android:textColor="#A0A0A0"
+                android:textSize="12sp"
+                android:layout_margin="2dp" />
+
+            <Button
+                android:id="@+id/key_enter"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="2.5"
+                android:text="↵"
+                android:textColor="#FFFFFF"
+                android:background="#353535"
+                android:layout_margin="2dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>
