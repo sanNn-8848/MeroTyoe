@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.preference.PreferenceManager
 import com.merotype.keyboard.services.MeroTypeIME
+import com.romannepali.keyboard.HapticFeedbackManager
 
 class BackspaceKeyView @JvmOverloads constructor(
     context: Context,
@@ -14,6 +15,7 @@ class BackspaceKeyView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : AppCompatImageButton(context, attrs, defStyleAttr) {
 
+    private val hapticManager by lazy { HapticFeedbackManager(context) }
     private var initialX = 0f
     private var isWordEraseTriggered = false
     private var wordEraseThresholdPx = 30f
@@ -42,6 +44,7 @@ class BackspaceKeyView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 initialX = event.x
                 isWordEraseTriggered = false
+                hapticManager.performKeyHaptic(this, HapticFeedbackManager.FeedbackType.KEY_DELETE)
                 performClick()
                 return true
             }
@@ -49,6 +52,7 @@ class BackspaceKeyView @JvmOverloads constructor(
                 val deltaX = event.x - initialX
                 if (deltaX < -wordEraseThresholdPx && !isWordEraseTriggered) {
                     isWordEraseTriggered = true
+                    hapticManager.performKeyHaptic(this, HapticFeedbackManager.FeedbackType.KEY_ACTION)
                     // Trigger word erase on the active IME service
                     (findImeService() ?: (context as? MeroTypeIME))?.performWordBackspace()
                 }

@@ -225,7 +225,7 @@ class SuggestionEngine(private val context: android.content.Context) {
                 val bucket = wordsByFirstChar[ch] ?: continue
                 for (word in bucket) {
                     if (abs(word.length - input.length) > 2) continue
-                    val dist = levenshteinWithMax(input, word, 2)
+                    val dist = Levenshtein.damerauDistance(input, word, maxDistance = 2)
                     if (dist > 2) continue
                     val similarity = 1.0 - dist.toDouble() / maxOf(input.length, word.length, 1)
                     if (similarity < 0.6) continue
@@ -851,30 +851,18 @@ class SuggestionEngine(private val context: android.content.Context) {
         return (1.0 - (-raw / 25.0)).coerceIn(0.0, 1.0)
     }
 
-    private fun levenshtein(a: String, b: String): Int {
-        if (a == b) return 0
-        if (a.isEmpty()) return b.length
-        if (b.isEmpty()) return a.length
-
-        val previous = IntArray(b.length + 1) { it }
-
-        for (i in 1..a.length) {
-            val current = IntArray(b.length + 1)
-            current[0] = i
-
-            for (j in 1..b.length) {
-                val insert = current[j - 1] + 1
-                val delete = previous[j] + 1
-                val replace = previous[j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1
-                current[j] = minOf(insert, delete, replace)
-            }
-
-            for (j in current.indices) {
-                previous[j] = current[j]
-            }
+    /**
+     * Suggests spelling corrections for a misspelled Roman Nepali word based on dictionary proximity.
+     */
+    fun suggestSpellingCorrections(word: String, limit: Int = 3): List<Levenshtein.Candidate> {
+        val pairs: List<Pair<String, Int>> = synchronized(stateLock) {
+            trie.getAllWords()
         }
+        return Levenshtein.suggestCorrections(word, pairs, maxDistance = 2, limit = limit)
+    }
 
-        return previous[b.length]
+    private fun levenshtein(a: String, b: String): Int {
+        return Levenshtein.distance(a, b)
     }
 
     // ------------------------------------------------------------------

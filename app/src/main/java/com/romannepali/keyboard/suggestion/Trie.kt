@@ -146,4 +146,46 @@ class Trie {
 
         return existed
     }
+
+    /**
+     * Searches the Trie for dictionary words within [maxDistance] Levenshtein edits
+     * of [query]. Performs depth-first traversal with dynamic programming row vectors,
+     * pruning subtrees when the minimum row edit distance exceeds [maxDistance].
+     */
+    fun searchFuzzy(query: String, maxDistance: Int = 2): List<Pair<String, Int>> {
+        val clean = query.trim().lowercase()
+        if (clean.isEmpty()) return emptyList()
+
+        val results = ArrayList<Pair<String, Int>>()
+        val initialRow = IntArray(clean.length + 1) { it }
+
+        fun dfs(node: TrieNode, parentRow: IntArray) {
+            for ((char, child) in node.children) {
+                val newRow = IntArray(clean.length + 1)
+                newRow[0] = parentRow[0] + 1
+                var minVal = newRow[0]
+
+                for (j in 1..clean.length) {
+                    val cost = if (clean[j - 1] == char) 0 else 1
+                    newRow[j] = minOf(
+                        newRow[j - 1] + 1,       // insert
+                        parentRow[j] + 1,        // delete
+                        parentRow[j - 1] + cost  // substitute
+                    )
+                    if (newRow[j] < minVal) minVal = newRow[j]
+                }
+
+                if (child.isEndOfWord && newRow[clean.length] <= maxDistance) {
+                    child.word?.let { results.add(it to child.frequency) }
+                }
+
+                if (minVal <= maxDistance) {
+                    dfs(child, newRow)
+                }
+            }
+        }
+
+        dfs(root, initialRow)
+        return results.distinctBy { it.first }.sortedByDescending { it.second }
+    }
 }

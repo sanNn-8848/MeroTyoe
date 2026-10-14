@@ -6,7 +6,9 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.media.SoundPool
+import android.os.SystemClock
 import android.util.AttributeSet
+import android.util.SparseArray
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -18,6 +20,8 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.romannepali.keyboard.spatial.KeyQuadTree
+import com.romannepali.keyboard.spatial.KeySpatialTarget
 
 class GboardKeyboardView @JvmOverloads constructor(
     context: Context,
@@ -101,6 +105,25 @@ class GboardKeyboardView @JvmOverloads constructor(
 
     // Every key knows its row so a pressed key's popup can be raised above neighbours.
     private val keyRows = HashMap<View, View>()
+
+    // Spatial Index QuadTree for low-latency multi-touch key hit-testing
+    private val quadTree = KeyQuadTree()
+    private val spatialTargets = ArrayList<KeySpatialTarget>()
+
+    private class ActivePointer(
+        val pointerId: Int,
+        val target: KeySpatialTarget,
+        val initialX: Float,
+        val initialY: Float,
+        val downTime: Long,
+        var longPressRunnable: Runnable? = null,
+        var repeatRunnable: Runnable? = null,
+        var longPressFired: Boolean = false,
+        var wordsDeletedByDrag: Int = 0,
+        var isDraggingLeft: Boolean = false
+    )
+
+    private val activePointers = SparseArray<ActivePointer>()
 
     // Track every key's delayed touch work so a rebuild/detach can cancel it
     // before the dying views are discarded.
@@ -289,15 +312,50 @@ class GboardKeyboardView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Cleans up all active touch interactions, key-press visual states,
+     * animations, and floating popups during configuration changes or focus shifts.
+     */
+    fun clearActiveStates() {
+        for (i in 0 until activePointers.size()) {
+            val active = activePointers.valueAt(i)
+            active.longPressRunnable?.let { cancelKeyRunnable(active.target.view, it) }
+            active.repeatRunnable?.let { cancelKeyRunnable(active.target.view, it) }
+        }
+        activePointers.clear()
+        cancelAllKeyWork()
+        keyRows.keys.forEach { key ->
+            key.isPressed = false
+            key.translationZ = 0f
+            key.animate().cancel()
+            key.scaleX = 1f
+            key.scaleY = 1f
+        }
+        keyRows.values.forEach { row ->
+            row.translationZ = 0f
+        }
+        letterKeys.forEach { (parts, _) ->
+            parts.popup.animate().cancel()
+            parts.popup.visibility = View.GONE
+            parts.popup.scaleX = 1f
+            parts.popup.scaleY = 1f
+            parts.popup.translationY = 0f
+            parts.popup.alpha = 1f
+        }
+    }
+
     // ------------------------------------------------------------------
     // Keyboard construction
     // ------------------------------------------------------------------
 
     private fun buildKeyboard() {
+        clearActiveStates()
         cancelAllKeyWork()
         removeAllViews()
         letterKeys.clear()
         keyRows.clear()
+        spatialTargets.clear()
+        quadTree.clear()
         shiftKey = null
         enterKey = null
         setBackgroundColor(themeBackground())
@@ -429,6 +487,234 @@ class GboardKeyboardView @JvmOverloads constructor(
         val heightSpec = MeasureSpec.makeMeasureSpec(targetHeight, MeasureSpec.EXACTLY)
         super.onMeasure(widthMeasureSpec, heightSpec)
         setMeasuredDimension(measuredWidth, targetHeight)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        rebuildSpatialIndex()
+    }
+
+    private fun rebuildSpatialIndex() {
+        if (width <= 0 || height <= 0 || spatialTargets.isEmpty()) return
+        for (i in 0 until spatialTargets.size) {
+            val target = spatialTargets[i]
+            val parentRow = keyRows[target.view] ?: target.view.parent as? View
+            val rowLeft = parentRow?.left ?: 0
+            val rowTop = parentRow?.top ?: 0
+            val left = (rowLeft + target.view.left).toFloat()
+            val top = (rowTop + target.view.top).toFloat()
+            val right = (rowLeft + target.view.right).toFloat()
+            val bottom = (rowTop + target.view.bottom).toFloat()
+            target.bounds.set(left, top, right, bottom)
+        }
+        quadTree.build(spatialTargets, width.toFloat(), height.toFloat())
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        // Intercept all touches for spatial QuadTree multi-pointer processing
+        return true
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val actionIdx = event.actionIndex
+                val pointerId = event.getPointerId(actionIdx)
+                val x = event.getX(actionIdx)
+                val y = event.getY(actionIdx)
+                handlePointerDown(pointerId, x, y)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                handlePointerMove(event)
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                val actionIdx = event.actionIndex
+                val pointerId = event.getPointerId(actionIdx)
+                handlePointerUp(pointerId)
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                handleAllPointersUp()
+                return true
+            }
+        }
+        return true
+    }
+
+    private fun handlePointerDown(pointerId: Int, x: Float, y: Float) {
+        val target = quadTree.findKey(x, y) ?: return
+
+        activePointers[pointerId]?.let { cleanupActivePointer(it) }
+
+        val active = ActivePointer(
+            pointerId = pointerId,
+            target = target,
+            initialX = x,
+            initialY = y,
+            downTime = SystemClock.uptimeMillis()
+        )
+        activePointers.put(pointerId, active)
+
+        // 1. Commit action FIRST for immediate response during rapid typing
+        target.onDown()
+
+        // 2. Haptic and sound feedback
+        val hapticType = when {
+            target.isBackspace -> HapticFeedbackManager.FeedbackType.KEY_DELETE
+            target.isSpace -> HapticFeedbackManager.FeedbackType.KEY_SPACE
+            target.isAction -> HapticFeedbackManager.FeedbackType.KEY_ACTION
+            else -> HapticFeedbackManager.FeedbackType.KEY_LETTER
+        }
+        haptic(target.view, hapticType)
+        playSound(target.soundKind)
+
+        // 3. Visual pressed state & popup preview
+        target.view.isPressed = true
+        pressScaleOn(target.view)
+        if (target.hasPopup && target.popupView is TextView) {
+            val popupText = (target.view as? FrameLayout)?.let {
+                (it.getChildAt(0) as? TextView)?.text?.toString()
+            } ?: target.label ?: ""
+            showPopup(target.popupView, popupText, target.view)
+        }
+
+        // 4. Long press / repeat scheduling
+        if (target.onAltPress != null) {
+            val altRunnable = Runnable {
+                active.longPressFired = true
+                hapticStrong(target.view)
+                if (target.hasPopup && target.popupView is TextView && target.altLabel != null) {
+                    target.popupView.text = target.altLabel
+                }
+                target.onAltPress.invoke()
+            }
+            active.longPressRunnable = altRunnable
+            postKeyDelayed(target.view, altRunnable, target.holdTimeoutMs)
+        } else if (target.onLongPress != null || target.repeat) {
+            val repeatRunnable = object : Runnable {
+                override fun run() {
+                    if (active.longPressFired && target.repeat) {
+                        playSound(target.soundKind)
+                        target.onDown()
+                        val repType = if (target.soundKind == SOUND_DELETE) {
+                            HapticFeedbackManager.FeedbackType.KEY_DELETE
+                        } else {
+                            HapticFeedbackManager.FeedbackType.KEY_ACTION
+                        }
+                        haptic(target.view, repType)
+                        postKeyDelayed(target.view, this, target.repeatIntervalMs)
+                    }
+                }
+            }
+            active.repeatRunnable = repeatRunnable
+
+            val longPressRunnable = Runnable {
+                active.longPressFired = true
+                hapticStrong(target.view)
+                if (target.onLongPress != null) {
+                    target.onLongPress.invoke()
+                } else if (target.repeat) {
+                    target.onDown()
+                    postKeyDelayed(target.view, repeatRunnable, target.repeatIntervalMs)
+                }
+            }
+            active.longPressRunnable = longPressRunnable
+            postKeyDelayed(target.view, longPressRunnable, target.holdTimeoutMs)
+        }
+    }
+
+    private fun handlePointerMove(event: MotionEvent) {
+        for (i in 0 until event.pointerCount) {
+            val pointerId = event.getPointerId(i)
+            val active = activePointers.get(pointerId) ?: continue
+            val x = event.getX(i)
+            val y = event.getY(i)
+            val deltaX = x - active.initialX
+            val deltaY = y - active.initialY
+
+            if (active.target.isBackspace && Prefs.swipeDeleteWord(context)) {
+                if (deltaX < -dp(10) && kotlin.math.abs(deltaX) > kotlin.math.abs(deltaY) * 0.7f) {
+                    active.isDraggingLeft = true
+                    active.longPressRunnable?.let { cancelKeyRunnable(active.target.view, it) }
+                    active.repeatRunnable?.let { cancelKeyRunnable(active.target.view, it) }
+
+                    val maxShift = -dp(42).toFloat()
+                    val shift = (deltaX * 0.45f).coerceIn(maxShift, 0f)
+                    active.target.view.translationX = shift
+
+                    val dragDist = -deltaX
+                    val threshold1 = dp(32).toFloat()
+                    val stepSize = dp(38).toFloat()
+                    val targetWords = if (dragDist >= threshold1) {
+                        1 + ((dragDist - threshold1) / stepSize).toInt()
+                    } else 0
+
+                    while (active.wordsDeletedByDrag < targetWords) {
+                        active.wordsDeletedByDrag++
+                        onKeyPressed?.invoke("DELETE_WORD")
+                        haptic(active.target.view, HapticFeedbackManager.FeedbackType.KEY_DELETE)
+                        playSound(SOUND_DELETE)
+                    }
+                    continue
+                } else if (active.isDraggingLeft) {
+                    val maxShift = -dp(42).toFloat()
+                    active.target.view.translationX = (deltaX * 0.45f).coerceIn(maxShift, 0f)
+                    continue
+                }
+            }
+
+            val slop = dp(14).toFloat()
+            val inside = x >= active.target.bounds.left - slop &&
+                    x <= active.target.bounds.right + slop &&
+                    y >= active.target.bounds.top - slop &&
+                    y <= active.target.bounds.bottom + slop
+
+            if (!inside) {
+                active.target.view.isPressed = false
+                active.longPressRunnable?.let { cancelKeyRunnable(active.target.view, it) }
+                if (active.target.hasPopup && active.target.popupView is TextView) {
+                    hidePopup(active.target.popupView, active.target.view)
+                }
+            } else {
+                active.target.view.isPressed = true
+            }
+        }
+    }
+
+    private fun cleanupActivePointer(active: ActivePointer) {
+        active.longPressRunnable?.let { cancelKeyRunnable(active.target.view, it) }
+        active.repeatRunnable?.let { cancelKeyRunnable(active.target.view, it) }
+
+        active.target.view.isPressed = false
+        pressScaleOff(active.target.view)
+        if (active.target.hasPopup && active.target.popupView is TextView) {
+            hidePopup(active.target.popupView, active.target.view)
+        }
+
+        if (active.target.isBackspace && active.isDraggingLeft) {
+            active.target.view.animate().translationX(0f).setDuration(120).start()
+            active.isDraggingLeft = false
+            active.wordsDeletedByDrag = 0
+        }
+
+        active.target.onUp?.invoke()
+    }
+
+    private fun handlePointerUp(pointerId: Int) {
+        val active = activePointers.get(pointerId) ?: return
+        cleanupActivePointer(active)
+        activePointers.remove(pointerId)
+    }
+
+    private fun handleAllPointersUp() {
+        for (i in 0 until activePointers.size()) {
+            val active = activePointers.valueAt(i)
+            cleanupActivePointer(active)
+        }
+        activePointers.clear()
+        clearActiveStates()
     }
 
     private fun keyboardSideMargin(containerWidth: Int = 0): Int {
@@ -634,89 +920,21 @@ class GboardKeyboardView @JvmOverloads constructor(
             alpha = 0f
         }
 
-        var longPressFired = false
-        val longPressRunnable = Runnable {
-            longPressFired = true
-            if (altTag != null && onAltPress != null) {
-                hapticStrong(key)
-                popup.text = altTag
-                onAltPress()
-            }
-        }
-
-        // Commit on touch-down (like Gboard) so rapid, overlapping taps can never be
-        // cancelled by touch-slop or by a second finger landing first. An additional
-        // pointer is committed too, because fast two-thumb typing overlaps pointers.
-        var ownerPointerId = -1
-        key.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    val actionIdx = event.actionIndex
-                    val pid = event.getPointerId(actionIdx)
-                    val px = event.getX(actionIdx)
-                    val py = event.getY(actionIdx)
-                    val insideTouch = px >= 0f && py >= 0f && px < key.width && py < key.height
-                    if (insideTouch && ownerPointerId == -1) {
-                        ownerPointerId = pid
-                        longPressFired = false
-                        cancelKeyRunnable(key, longPressRunnable)
-                        postKeyDelayed(key, longPressRunnable, LONG_PRESS_TIMEOUT)
-
-                        // Commit FIRST: the character must never wait behind
-                        // sound, animation, or popup work (fast-typing latency).
-                        onPress()
-                        haptic(key, HapticFeedbackManager.FeedbackType.KEY_LETTER)
-                        key.isPressed = true
-                        pressScaleOn(key)
-                        playSound(SOUND_LETTER)
-                        showPopup(popup, main.text, key)
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    if (ownerPointerId != -1) {
-                        val idx = event.findPointerIndex(ownerPointerId)
-                        if (idx >= 0) {
-                            val x = event.getX(idx)
-                            val y = event.getY(idx)
-                            val inside =
-                                x >= -dp(6) && y >= -dp(6) && x < key.width + dp(6) && y < key.height + dp(6)
-                            key.isPressed = inside
-                            if (!inside) {
-                                cancelKeyRunnable(key, longPressRunnable)
-                                hidePopup(popup, key)
-                            }
-                        }
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_POINTER_UP -> {
-                    val actionIdx = event.actionIndex
-                    val pid = event.getPointerId(actionIdx)
-                    if (pid == ownerPointerId) {
-                        ownerPointerId = -1
-                        cancelKeyRunnable(key, longPressRunnable)
-                        key.isPressed = false
-                        pressScaleOff(key)
-                        hidePopup(popup, key)
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    ownerPointerId = -1
-                    cancelKeyRunnable(key, longPressRunnable)
-                    key.isPressed = false
-                    pressScaleOff(key)
-                    hidePopup(popup, key)
-                    true
-                }
-
-                else -> true
-            }
-        }
+        val target = KeySpatialTarget(
+            id = label,
+            view = key,
+            isAction = false,
+            isLetter = isLetter,
+            label = label,
+            altLabel = altTag,
+            popupView = popup,
+            onDown = onPress,
+            onAltPress = onAltPress,
+            holdTimeoutMs = LONG_PRESS_TIMEOUT,
+            soundKind = SOUND_LETTER,
+            hasPopup = true
+        )
+        spatialTargets.add(target)
 
         row.addView(key)
         return KeyParts(key, main, tag, popup)
@@ -804,166 +1022,22 @@ class GboardKeyboardView @JvmOverloads constructor(
             styleShiftIcon()
         }
 
-        var longPressFired = false
-
-        val repeatRunnable = object : Runnable {
-            override fun run() {
-                if (longPressFired && repeat) {
-                    playSound(sound)
-                    click()
-                    val repType = if (sound == SOUND_DELETE) {
-                        HapticFeedbackManager.FeedbackType.KEY_DELETE
-                    } else {
-                        HapticFeedbackManager.FeedbackType.KEY_ACTION
-                    }
-                    haptic(key, repType)
-                    postKeyDelayed(key, this, REPEAT_INTERVAL)
-                }
-            }
-        }
-
-        val longPressRunnable = Runnable {
-            longPressFired = true
-            if (onLongPress != null) {
-                onLongPress()
-            } else if (repeat) {
-                click()
-                postKeyDelayed(key, repeatRunnable, REPEAT_INTERVAL)
-            }
-        }
-
-        // Action keys also commit on touch-down for instant response. Backspace does
-        // a first delete on down, then starts repeating once the long-press fires,
-        // or executes word deletion if swiped/dragged leftwards.
-        var ownerPointerId = -1
-        var downX = 0f
-        var downY = 0f
-        var wordsDeletedByDrag = 0
-        var isDraggingLeft = false
-
-        key.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    val actionIdx = event.actionIndex
-                    val pid = event.getPointerId(actionIdx)
-                    val px = event.getX(actionIdx)
-                    val py = event.getY(actionIdx)
-                    val insideTouch = px >= 0f && py >= 0f && px < key.width && py < key.height
-                    if (insideTouch && ownerPointerId == -1) {
-                        ownerPointerId = pid
-                        downX = px
-                        downY = py
-                        wordsDeletedByDrag = 0
-                        isDraggingLeft = false
-                        longPressFired = false
-                        if (repeat || onLongPress != null) {
-                            postKeyDelayed(key, longPressRunnable, holdTimeoutMs)
-                        }
-                        // Commit FIRST so feedback work can't delay the action.
-                        click()
-                        val hapticType = if (sound == SOUND_DELETE) {
-                            HapticFeedbackManager.FeedbackType.KEY_DELETE
-                        } else {
-                            HapticFeedbackManager.FeedbackType.KEY_ACTION
-                        }
-                        haptic(key, hapticType)
-                        key.isPressed = true
-                        pressScaleOn(key)
-                        playSound(sound)
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    if (ownerPointerId != -1) {
-                        val idx = event.findPointerIndex(ownerPointerId)
-                        if (idx >= 0) {
-                            val x = event.getX(idx)
-                            val y = event.getY(idx)
-                            val deltaX = x - downX
-                            val deltaY = y - downY
-
-                            if (isBackspace && Prefs.swipeDeleteWord(context)) {
-                                if (deltaX < -dp(10) && kotlin.math.abs(deltaX) > kotlin.math.abs(deltaY) * 0.7f) {
-                                    isDraggingLeft = true
-                                    cancelKeyRunnable(key, longPressRunnable)
-                                    cancelKeyRunnable(key, repeatRunnable)
-
-                                    // Visually move the erase key forward to the left
-                                    val maxShift = -dp(42).toFloat()
-                                    val shift = (deltaX * 0.45f).coerceIn(maxShift, 0f)
-                                    key.translationX = shift
-
-                                    // Multi-word erase calculation as user drags further left
-                                    val dragDist = -deltaX
-                                    val threshold1 = dp(32).toFloat()
-                                    val stepSize = dp(38).toFloat()
-                                    val targetWords = if (dragDist >= threshold1) {
-                                        1 + ((dragDist - threshold1) / stepSize).toInt()
-                                    } else 0
-
-                                    while (wordsDeletedByDrag < targetWords) {
-                                        wordsDeletedByDrag++
-                                        onKeyPressed?.invoke("DELETE_WORD")
-                                        haptic(key, HapticFeedbackManager.FeedbackType.KEY_DELETE)
-                                        playSound(sound)
-                                    }
-                                } else if (isDraggingLeft) {
-                                    val maxShift = -dp(42).toFloat()
-                                    key.translationX = (deltaX * 0.45f).coerceIn(maxShift, 0f)
-                                }
-                            }
-
-                            if (!isDraggingLeft && !longPressFired) {
-                                val inside =
-                                    x >= -dp(6) && y >= -dp(6) && x < key.width + dp(6) && y < key.height + dp(6)
-                                key.isPressed = inside
-                                if (!inside) {
-                                    cancelKeyRunnable(key, longPressRunnable)
-                                }
-                            }
-                        }
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_POINTER_UP -> {
-                    val actionIdx = event.actionIndex
-                    val pid = event.getPointerId(actionIdx)
-                    if (pid == ownerPointerId) {
-                        ownerPointerId = -1
-                        cancelKeyRunnable(key, longPressRunnable)
-                        cancelKeyRunnable(key, repeatRunnable)
-                        longPressFired = false
-                        key.isPressed = false
-                        pressScaleOff(key)
-                        if (isBackspace) {
-                            key.animate().translationX(0f).setDuration(120).start()
-                            isDraggingLeft = false
-                            wordsDeletedByDrag = 0
-                        }
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    ownerPointerId = -1
-                    cancelKeyRunnable(key, longPressRunnable)
-                    cancelKeyRunnable(key, repeatRunnable)
-                    longPressFired = false
-                    key.isPressed = false
-                    pressScaleOff(key)
-                    if (isBackspace) {
-                        key.animate().translationX(0f).setDuration(120).start()
-                        isDraggingLeft = false
-                        wordsDeletedByDrag = 0
-                    }
-                    true
-                }
-
-                else -> true
-            }
-        }
+        val target = KeySpatialTarget(
+            id = if (iconRes != null) "action_$iconRes" else label,
+            view = key,
+            isAction = true,
+            isLetter = false,
+            label = label,
+            onDown = click,
+            onLongPress = onLongPress,
+            repeat = repeat,
+            repeatIntervalMs = REPEAT_INTERVAL,
+            holdTimeoutMs = holdTimeoutMs,
+            soundKind = sound,
+            isBackspace = isBackspace,
+            hasPopup = false
+        )
+        spatialTargets.add(target)
 
         row.addView(key)
         return key
@@ -984,97 +1058,24 @@ class GboardKeyboardView @JvmOverloads constructor(
         }
         keyRows[key] = row
 
-        // Space commits on release so a long-press can't leak an extra space: a
-        // normal tap inserts " " on ACTION_UP, while a 250ms hold instead opens the
-        // language switcher and inserts nothing.
-        var longPressFired = false
-        var ownerPointerId = -1
-
-        val toggleKeyboardRunnable = Runnable {
-            longPressFired = true
-            hapticStrong(key)
-            onKeyLongPressed?.invoke(" ")
-        }
-
-        key.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    val actionIdx = event.actionIndex
-                    val pid = event.getPointerId(actionIdx)
-                    val px = event.getX(actionIdx)
-                    val py = event.getY(actionIdx)
-                    val insideTouch = px >= 0f && py >= 0f && px < key.width && py < key.height
-                    if (insideTouch && ownerPointerId == -1) {
-                        ownerPointerId = pid
-                        key.isPressed = true
-                        pressScaleOn(key)
-                        playSound(SOUND_SPACE)
-                        haptic(key, HapticFeedbackManager.FeedbackType.KEY_SPACE)
-                        longPressFired = false
-                        cancelKeyRunnable(key, toggleKeyboardRunnable)
-                        postKeyDelayed(
-                            key,
-                            toggleKeyboardRunnable,
-                            LONG_PRESS_TIMEOUT
-                        )
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    if (ownerPointerId != -1) {
-                        val idx = event.findPointerIndex(ownerPointerId)
-                        if (idx >= 0) {
-                            val x = event.getX(idx)
-                            val y = event.getY(idx)
-                            val inside =
-                                x >= -dp(6) && y >= -dp(6) && x < key.width + dp(6) && y < key.height + dp(6)
-                            key.isPressed = inside
-                            if (!inside) {
-                                cancelKeyRunnable(key, toggleKeyboardRunnable)
-                            }
-                        }
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_POINTER_UP -> {
-                    val actionIdx = event.actionIndex
-                    val pid = event.getPointerId(actionIdx)
-                    if (pid == ownerPointerId) {
-                        ownerPointerId = -1
-                        cancelKeyRunnable(key, toggleKeyboardRunnable)
-                        if (!longPressFired) {
-                            onKeyPressed?.invoke(" ")
-                        }
-                        key.isPressed = false
-                        pressScaleOff(key)
-                    }
-                    true
-                }
-
-                MotionEvent.ACTION_UP -> {
-                    cancelKeyRunnable(key, toggleKeyboardRunnable)
-                    if (!longPressFired && ownerPointerId != -1) {
-                        onKeyPressed?.invoke(" ")
-                    }
-                    ownerPointerId = -1
-                    key.isPressed = false
-                    pressScaleOff(key)
-                    true
-                }
-
-                MotionEvent.ACTION_CANCEL -> {
-                    ownerPointerId = -1
-                    cancelKeyRunnable(key, toggleKeyboardRunnable)
-                    key.isPressed = false
-                    pressScaleOff(key)
-                    true
-                }
-
-                else -> true
-            }
-        }
+        val target = KeySpatialTarget(
+            id = "KEY_SPACE",
+            view = key,
+            isAction = true,
+            isLetter = false,
+            label = " ",
+            onDown = {
+                onKeyPressed?.invoke(" ")
+            },
+            onLongPress = {
+                onKeyLongPressed?.invoke(" ")
+            },
+            holdTimeoutMs = LONG_PRESS_TIMEOUT,
+            soundKind = SOUND_SPACE,
+            isSpace = true,
+            hasPopup = false
+        )
+        spatialTargets.add(target)
 
         row.addView(key)
     }
@@ -1167,6 +1168,14 @@ class GboardKeyboardView @JvmOverloads constructor(
             val label = labelFor(entry)
             parts.main.text = label
             parts.popup.text = label
+        }
+        for (i in 0 until spatialTargets.size) {
+            val target = spatialTargets[i]
+            if (target.isLetter) {
+                target.label = (target.view as? FrameLayout)?.let {
+                    ((it.getChildAt(0) as? TextView)?.text?.toString())
+                } ?: target.label
+            }
         }
         styleShiftIcon()
     }

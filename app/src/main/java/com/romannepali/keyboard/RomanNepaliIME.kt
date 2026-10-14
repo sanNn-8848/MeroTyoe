@@ -7,10 +7,25 @@ import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.romannepali.keyboard.clipboard.ClipAction
 import com.romannepali.keyboard.clipboard.ClipboardManager
 import com.romannepali.keyboard.clipboard.ClipboardPane
@@ -18,14 +33,29 @@ import com.romannepali.keyboard.editing.TextEditor
 import com.romannepali.keyboard.emoji.EmojiSearchPane
 import com.romannepali.keyboard.suggestion.AUTO_CORRECT_THRESHOLD
 import com.romannepali.keyboard.suggestion.PredictionContext
+import com.romannepali.keyboard.suggestion.PredictiveTextEngine
 import com.romannepali.keyboard.suggestion.SuggestionEngine
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.MeroTypeIME {
+class RomanNepaliIME : InputMethodService(),
+    com.merotype.keyboard.services.MeroTypeIME,
+    LifecycleOwner,
+    ViewModelStoreOwner,
+    SavedStateRegistryOwner {
+
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    private val store = ViewModelStore()
+
+    override val lifecycle: Lifecycle get() = lifecycleRegistry
+    override val viewModelStore: ViewModelStore get() = store
+    override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
 
     private var keyboardView: GboardKeyboardView? = null
     private var suggestionBar: SuggestionBar? = null
+    private var containerSuggestions: LinearLayout? = null
     private var dragOverlay: SuggestionDragOverlay? = null
     private var featureCarousel: FeatureCarouselView? = null
     private var featurePane: android.widget.FrameLayout? = null
@@ -34,6 +64,7 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
     private var mainView: View? = null
 
     private lateinit var suggestionEngine: SuggestionEngine
+    private lateinit var predictiveTextEngine: PredictiveTextEngine
     private lateinit var clipboardManager: ClipboardManager
     private var clipListener: android.content.ClipboardManager.OnPrimaryClipChangedListener? = null
     private val textEditor = TextEditor()
@@ -60,7 +91,11 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
     override fun onCreate() {
         super.onCreate()
 
+        savedStateRegistryController.performRestore(null)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+
         suggestionEngine = SuggestionEngine(this)
+        predictiveTextEngine = PredictiveTextEngine(this)
         clipboardManager = ClipboardManager.get(this)
 
         // Watch the system clipboard so ANY copy/cut (this keyboard's or any
@@ -78,8 +113,6 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
         (getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager)
             ?.addPrimaryClipChangedListener(clipListener)
-
-        updateFullscreenMode()
     }
 
     /**
@@ -141,9 +174,40 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
 
         keyboardView = view.findViewById(R.id.keyboard_view)
         suggestionBar = view.findViewById(R.id.suggestion_bar)
+        containerSuggestions = view.findViewById(R.id.container_suggestions)
         featureCarousel = view.findViewById(R.id.feature_carousel)
         featurePane = view.findViewById(R.id.feature_pane)
         mainView = view
+
+        // Attach ViewTree lifecycle and saved state owners for Jetpack Compose
+        view.setViewTreeLifecycleOwner(this)
+        view.setViewTreeViewModelStoreOwner(this)
+        view.setViewTreeSavedStateRegistryOwner(this)
+
+        // Render Compose-based SuggestionView inside container_suggestions
+        containerSuggestions?.let { container ->
+            val composeView = ComposeView(this).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+                setContent {
+                    val isDark = Prefs.darkTheme(this@RomanNepaliIME)
+                    SuggestionView(
+                        predictiveTextEngine = predictiveTextEngine,
+                        onSuggestionClick = { chosen ->
+                            applySuggestion(chosen)
+                        },
+                        isDarkTheme = isDark
+                    )
+                }
+            }
+            container.removeAllViews()
+            container.addView(
+                composeView,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
 
         // Full-bleed "Suggestion Edit Mode" overlay, drawn above everything.
         val root = view as? android.widget.FrameLayout
@@ -257,24 +321,17 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
             if (emojiSearchPane?.isSearchTarget() == true) {
                 emojiSearchPane?.consumeKey(text)
             } else if (ic != null) {
-                when (text) {
-                    " " -> handleSpace(ic)
+                when {
+                    text == " " -> handleSpace(ic)
 
-                    "." -> {
-                        finishCurrentWord()
-                        ic.commitText(".", 1)
-                        suggestionBar?.clearSuggestions()
+                    isPunctuationMark(text) -> {
+                        handleAutoCorrection(terminator = text)
                     }
 
-                    "," -> {
-                        finishCurrentWord()
-                        ic.commitText(",", 1)
+                    text == "↵" -> {
+                        if (currentWord.isNotEmpty()) finishCurrentWord()
                         suggestionBar?.clearSuggestions()
-                    }
-
-                    "↵" -> {
-                        finishCurrentWord()
-                        suggestionBar?.clearSuggestions()
+                        predictiveTextEngine.onInputTextChanged("")
 
                         val editorInfo = currentInputEditorInfo
                         val imeOptions = editorInfo?.imeOptions ?: 0
@@ -313,7 +370,7 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
                         }
                     }
 
-                    "⌫" -> {
+                    text == "⌫" -> {
                         val selected = ic.getSelectedText(0)?.toString().orEmpty()
                         if (selected.isNotEmpty()) {
                             // Deleting a highlighted range: replace it with nothing.
@@ -321,6 +378,7 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
                             currentWord.clear()
                             ic.commitText("", 1)
                             suggestionBar?.clearSuggestions()
+                            predictiveTextEngine.onInputTextChanged("")
                         } else {
                             val restored = deletedText
                             val deleted = ic.getTextBeforeCursor(1, 0)?.toString() ?: ""
@@ -334,31 +392,29 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
                                 ) {
                                     currentWord.deleteCharAt(currentWord.length - 1)
                                     updateSuggestions()
+                                    predictiveTextEngine.onInputTextChanged(currentWord.toString())
                                 } else {
                                     // The editor and our cached word disagree.
                                     // Re-sync instead of corrupting currentWord.
                                     currentWord.clear()
                                     suggestionJob++
                                     suggestionBar?.clearSuggestions()
+                                    predictiveTextEngine.onInputTextChanged("")
                                 }
                             } else {
-                                // Do not modify contextWords merely because the character before
-                                // the cursor is a space. The cursor may have moved, or the user
-                                // may be editing text that was not produced by this IME session.
-                                // contextWords is prediction state, not a reliable representation
-                                // of the editor's actual document.
                                 updateSuggestions()
+                                predictiveTextEngine.onInputTextChanged("")
                             }
 
                             ic.deleteSurroundingText(1, 0)
                         }
                     }
 
-                    "DELETE_WORD" -> {
+                    text == "DELETE_WORD" -> {
                         handleDeleteWord(ic)
                     }
 
-                    "⇧" -> {
+                    text == "⇧" -> {
                         // Shift is handled inside GboardKeyboardView.
                     }
 
@@ -367,6 +423,7 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
                         if (text.length == 1 && text[0].isLetter()) {
                             currentWord.append(text.lowercase())
                             updateSuggestions()
+                            predictiveTextEngine.onInputTextChanged(currentWord.toString())
                         }
                     }
                 }
@@ -403,12 +460,82 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
         suggestionBar?.applyTheme(dark)
     }
 
+    /** Punctuation marks that trigger auto-correction */
+    private fun isPunctuationMark(text: String): Boolean {
+        if (text.isEmpty()) return false
+        val c = text[0]
+        return text.length == 1 && (
+            c in ".,!?:;-_'\"()[]{}/\\@#$%^&*+=<>~`|¿¡।" ||
+            (!c.isLetterOrDigit() && !c.isWhitespace())
+        )
+    }
+
+    /**
+     * Auto-correction handler that automatically replaces the current word with
+     * the highest-ranked prediction when the space key or a punctuation mark is triggered.
+     */
+    fun handleAutoCorrection(terminator: String = "") {
+        val ic = currentInputConnection ?: return
+        if (currentWord.isEmpty()) {
+            if (terminator.isNotEmpty()) {
+                ic.commitText(terminator, 1)
+            }
+            predictiveTextEngine.onInputTextChanged("")
+            return
+        }
+
+        val raw = currentWord.toString()
+        val word = raw.lowercase(Locale.ROOT)
+
+        // Find the highest-ranked prediction from PredictiveTextEngine or SuggestionEngine
+        val topPrediction = predictiveTextEngine.getHighestRankedPrediction()
+            ?.takeIf { it.isNotBlank() }
+            ?: run {
+                val correction = suggestionEngine.getAutoCorrection(word, contextWords)
+                if (correction.isCorrection && correction.confidence >= AUTO_CORRECT_THRESHOLD) {
+                    correction.word
+                } else null
+            }
+
+        var committed = word
+        if (topPrediction != null && !topPrediction.equals(raw, ignoreCase = true)) {
+            // Automatically replace current word with highest-ranked prediction
+            if (deleteExpectedTextBeforeCursor(ic, raw)) {
+                ic.commitText(topPrediction, 1)
+                committed = topPrediction
+            } else {
+                currentWord.clear()
+                suggestionJob++
+                predictiveTextEngine.onInputTextChanged("")
+                if (terminator.isNotEmpty()) ic.commitText(terminator, 1)
+                return
+            }
+        }
+
+        // Record usage to learn vocabulary
+        suggestionEngine.learnWord(committed)
+        predictiveTextEngine.recordWordOrPhrase(committed)
+
+        val previousWord = contextWords.lastOrNull()
+        suggestionEngine.updateContext(previousWord, committed)
+
+        pushContext(committed)
+        currentWord.clear()
+        predictiveTextEngine.onInputTextChanged("")
+
+        if (terminator.isNotEmpty()) {
+            ic.commitText(terminator, 1)
+        }
+        suggestionBar?.clearSuggestions()
+    }
+
     /** Deletes an entire word preceding the cursor, equivalent to Ctrl+Backspace. */
     private fun handleDeleteWord(ic: android.view.inputmethod.InputConnection) {
         val selected = ic.getSelectedText(0)?.toString()
         if (!selected.isNullOrEmpty()) {
             deletedText = selected
             currentWord.clear()
+            predictiveTextEngine.onInputTextChanged("")
             ic.commitText("", 1)
             suggestionBar?.clearSuggestions()
             return
@@ -435,6 +562,7 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
         currentWord.clear()
         suggestionJob++
         suggestionBar?.clearSuggestions()
+        predictiveTextEngine.onInputTextChanged("")
         ic.deleteSurroundingText(countToDelete, 0)
         updateSuggestions()
     }
@@ -451,6 +579,7 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
         if (!selected.isNullOrEmpty()) {
             deletedText = selected
             currentWord.clear()
+            predictiveTextEngine.onInputTextChanged("")
             ic.commitText("", 1)
             suggestionBar?.clearSuggestions()
         } else {
@@ -463,13 +592,16 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
                 if (actual.length == 1 && (actual[0].isLetter() || actual[0] == '\'')) {
                     currentWord.deleteCharAt(currentWord.length - 1)
                     updateSuggestions()
+                    predictiveTextEngine.onInputTextChanged(currentWord.toString())
                 } else {
                     currentWord.clear()
                     suggestionJob++
                     suggestionBar?.clearSuggestions()
+                    predictiveTextEngine.onInputTextChanged("")
                 }
             } else {
                 updateSuggestions()
+                predictiveTextEngine.onInputTextChanged("")
             }
             ic.deleteSurroundingText(1, 0)
         }
@@ -505,11 +637,9 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
         if (before == " " && Prefs.doubleSpacePeriod(this)) {
             // Double space -> ". ".
             ic.deleteSurroundingText(1, 0)
-            ic.commitText(". ", 1)
-            finishCurrentWord()
+            handleAutoCorrection(terminator = ". ")
         } else {
-            finishCurrentWord(autocorrect = true)
-            ic.commitText(" ", 1)
+            handleAutoCorrection(terminator = " ")
         }
         suggestionBar?.clearSuggestions()
     }
@@ -552,30 +682,39 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
 
         var committed = word
         if (autocorrect) {
-            val correction = suggestionEngine.getAutoCorrection(word, contextWords)
-            if (correction.isCorrection &&
-                correction.confidence >= AUTO_CORRECT_THRESHOLD
-            ) {
+            val topPrediction = predictiveTextEngine.getHighestRankedPrediction()
+                ?.takeIf { it.isNotBlank() }
+                ?: run {
+                    val correction = suggestionEngine.getAutoCorrection(word, contextWords)
+                    if (correction.isCorrection &&
+                        correction.confidence >= AUTO_CORRECT_THRESHOLD
+                    ) {
+                        correction.word
+                    } else null
+                }
+
+            if (topPrediction != null && !topPrediction.equals(raw, ignoreCase = true)) {
                 if (deleteExpectedTextBeforeCursor(ic, raw)) {
-                    ic.commitText(correction.word, 1)
-                    committed = correction.word
+                    ic.commitText(topPrediction, 1)
+                    committed = topPrediction
                 } else {
-                    // Editor text no longer matches our tracked word.
-                    // Never perform a blind deletion.
                     currentWord.clear()
                     suggestionJob++
+                    predictiveTextEngine.onInputTextChanged("")
                     return
                 }
             }
         }
 
         suggestionEngine.learnWord(committed)
+        predictiveTextEngine.recordWordOrPhrase(committed)
 
         val previousWord = contextWords.lastOrNull()
         suggestionEngine.updateContext(previousWord, committed)
 
         pushContext(committed)
         currentWord.clear()
+        predictiveTextEngine.onInputTextChanged("")
     }
 
     private fun pushContext(word: String) {
@@ -673,7 +812,8 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
      */
     private fun showFeatureMode(index: Int) {
         currentMode = index
-        suggestionBar?.visibility = if (index == 0) View.VISIBLE else View.GONE
+        containerSuggestions?.visibility = if (index == 0) View.VISIBLE else View.GONE
+        suggestionBar?.visibility = if (index == 0 && containerSuggestions == null) View.VISIBLE else View.GONE
         clipboardPane?.visibility = if (index == 1) View.VISIBLE else View.GONE
         emojiSearchPane?.visibility = if (index == 2) View.VISIBLE else View.GONE
         keyboardView?.setEmojiMode(index == 2)
@@ -838,6 +978,8 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
 
         currentWord.clear()
         suggestionBar?.clearSuggestions()
+        predictiveTextEngine.onInputTextChanged("")
+        predictiveTextEngine.recordWordOrPhrase(out)
     }
 
     /** Drop on REMOVE: suppress the word (reversible via undo). */
@@ -905,7 +1047,8 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
 
-        updateFullscreenMode()
+        keyboardView?.clearActiveStates()
+        dragOverlay?.endCurrentDragIfAny()
 
         // The keyboard view re-measures itself for the new orientation and does
         // not rebuild (rotation stability: suggestion/word/shift state survive).
@@ -965,6 +1108,9 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
     ) {
         super.onStartInputView(editorInfo, restarting)
         keyboardView?.setEnterAction(editorInfo?.imeOptions ?: 0)
+        saveEditedClip {
+            if (currentMode == 1) refreshClipboardPane()
+        }
     }
 
     override fun onUpdateSelection(
@@ -1028,12 +1174,33 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
         }
     }
 
+    override fun onWindowShown() {
+        super.onWindowShown()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        saveEditedClip {
+            if (currentMode == 1) refreshClipboardPane()
+        }
+    }
+
+    override fun onWindowHidden() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        keyboardView?.clearActiveStates()
+        super.onWindowHidden()
+    }
+
     override fun onFinishInputView(finishingInput: Boolean) {
         dragOverlay?.endCurrentDragIfAny()
+        keyboardView?.clearActiveStates()
         super.onFinishInputView(finishingInput)
     }
 
     override fun onDestroy() {
+        predictiveTextEngine.close()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        store.clear()
+
         (getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager)
             ?.removePrimaryClipChangedListener(clipListener)
@@ -1043,6 +1210,7 @@ class RomanNepaliIME : InputMethodService(), com.merotype.keyboard.services.Mero
         keyboardView?.onKeyPressed = null
         keyboardView = null
         suggestionBar = null
+        containerSuggestions = null
         emojiSearchPane = null
 
         super.onDestroy()

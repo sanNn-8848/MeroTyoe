@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import androidx.appcompat.widget.AppCompatButton
 import androidx.preference.PreferenceManager
 import com.merotype.keyboard.services.MeroTypeIME
+import com.romannepali.keyboard.HapticFeedbackManager
 
 class SpacebarKeyView @JvmOverloads constructor(
     context: Context,
@@ -14,6 +15,7 @@ class SpacebarKeyView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : AppCompatButton(context, attrs, defStyleAttr) {
 
+    private val hapticManager by lazy { HapticFeedbackManager(context) }
     private var startX = 0f
     private var startY = 0f
     private var startTime = 0L
@@ -43,6 +45,7 @@ class SpacebarKeyView @JvmOverloads constructor(
                 startX = event.x
                 startY = event.y
                 startTime = System.currentTimeMillis()
+                hapticManager.performKeyHaptic(this, HapticFeedbackManager.FeedbackType.KEY_SPACE)
                 performClick()
                 return true
             }
@@ -57,11 +60,13 @@ class SpacebarKeyView @JvmOverloads constructor(
                     GestureEvaluator.GestureAction.HORIZONTAL_CURSOR -> {
                         val direction = if (deltaX > 0) 1 else -1
                         ime?.moveCursor(direction)
+                        hapticManager.performKeyHaptic(this, HapticFeedbackManager.FeedbackType.GESTURE_TICK)
                         startX = event.x // Reset anchor for continuous tracking
                     }
                     GestureEvaluator.GestureAction.VERTICAL_SCROLL -> {
                         val scrollAmount = if (deltaY > 0) 1 else -1
                         ime?.performScroll(scrollAmount)
+                        hapticManager.performKeyHaptic(this, HapticFeedbackManager.FeedbackType.GESTURE_TICK)
                         startY = event.y
                     }
                     else -> {}
